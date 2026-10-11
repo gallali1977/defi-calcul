@@ -37,14 +37,19 @@ const RELAIS1 = [
  ['Pâtisserie','10 000 gâteaux × 4,50 €',15000,22000,4000,3000, 45000,30000,4000,'+33,3 %']
 ];
 const dominoSlides = (DOM, intro) => [
+ { kind: 'html', html: `<div class="eyebrow">Version téléphone · toute la classe</div><h2>C'est moi !</h2>
+ <p class="lead">Chacun reçoit une carte résultat sur son téléphone. Une formule s'affiche au tableau : celui qui a le résultat a 5 secondes pour appuyer sur « C'est moi ! ».</p>
+ ${rules(["Scannez le QR code, choisissez votre nom, tapez votre code.","Le professeur distribue les cartes : regardez bien votre résultat.","Une formule apparaît au tableau. Calculez de tête : est-ce votre résultat ?","Si oui, appuyez sur « C'est moi ! » en moins de 5 secondes. Sinon, ne touchez à rien.","La classe gagne la carte si <b>un seul élève</b> appuie et que c'est le bon."])}
+ <div class="note">Bouton « Quiz téléphone » en haut de l'écran. Points pour la jauge : le pourcentage de cartes gagnées. Pas de téléphone ? Diapo suivante : la version papier.</div>` },
  { kind: 'html', html: `<div class="eyebrow">Dominos humains · toute la classe</div><h2>J'ai… Qui a ?</h2>
  <p class="lead">Une seule chaîne de 24 calculs. Si un maillon casse, toute la classe attend : on s'entraide !</p>
  ${rules(["Chaque élève reçoit une carte (fiches à imprimer). L'élève qui a la carte <b>★ DÉPART</b> commence.", `Il lit sa carte : « J'ai ${DOM[0][0]}. Qui a ${DOM[0][1]} ? »`, `Celui qui a la réponse (${DOM[1][0]}) se lève et lit sa carte à son tour.`, "La chaîne revient à la carte DÉPART : on arrête le chrono.", "Objectif : moins de 4 minutes. Puis on bat notre record !"])}
  <div class="note">Ici le chrono <b>monte</b> : lancez-le quand le premier élève lit sa carte. ${intro || ''}</div>` },
  { kind: 'html', html: `<div class="eyebrow">Pour le professeur</div><h2>L'ordre de la chaîne</h2><p>Touchez une carte pour vérifier la réponse si la classe bloque.</p>
  <div class="grid">${DOM.map((d, i) => tile('Carte ' + (i + 1) + (i == 0 ? ' · ★ départ' : ''), `J'ai ${d[0]}. Qui a ${d[1]} ?`, '→ ' + DOM[(i + 1) % 24][0])).join('')}</div>` },
- { kind: 'points', record: true, bareme: `<ul><li>Chaîne bouclée en moins de 3 min : <b>100 pts</b></li><li>Moins de 4 min : <b>80 pts</b></li><li>Moins de 5 min : <b>60 pts</b></li><li>Chaîne terminée : <b>40 pts</b></li></ul>` }
+ { kind: 'points', record: true, bareme: `<ul><li>Version téléphone : points = <b>pourcentage de cartes gagnées</b> (calculé automatiquement)</li><li>Version papier, chaîne bouclée en moins de 3 min : <b>100 pts</b></li><li>Moins de 4 min : <b>80 pts</b></li><li>Moins de 5 min : <b>60 pts</b></li><li>Chaîne terminée : <b>40 pts</b></li></ul>` }
 ];
+const cardsOf = DOM => DOM.map((d, i) => ({ f: d[1], r: String(DOM[(i + 1) % 24][0]) }));
 const LIVE_BAREME = `<li>Quiz téléphone : points = <b>taux de réussite de la classe</b>, <b>+10</b> au-delà de 80 % (max 100). Calculé automatiquement.</li>`;
 
 const P1 = {
@@ -57,7 +62,7 @@ const P1 = {
   { n: 5, name: 'Boss final', d: 'Tout le programme', c: '--p5' }
  ],
  seances: [
- { id: 1, p: 1, title: "J'ai… Qui a ?", short: 'Dominos humains', calc: 'no', mode: 'up', slides: dominoSlides(DOM1, "Moins de 24 élèves ? Donnez deux cartes aux plus à l'aise.") },
+ { id: 1, p: 1, title: "J'ai… Qui a ?", short: 'Dominos humains', calc: 'no', mode: 'up', slides: dominoSlides(DOM1, "Moins de 24 élèves ? Donnez deux cartes aux plus à l'aise."), cards: cardsOf(DOM1) },
  { id: 2, p: 1, title: 'Les astuces secrètes du %', short: 'Quiz téléphone', calc: 'no', mode: 'down', slides: [
   { kind: 'html', html: `<div class="eyebrow">1 minute pour retenir</div><h2>Les astuces secrètes</h2>
   <div class="tricks"><div class="trick"><b>10 %</b><span>je divise par 10</span></div><div class="trick"><b>50 %</b><span>je prends la moitié</span></div><div class="trick"><b>25 %</b><span>la moitié de la moitié</span></div><div class="trick"><b>20 %</b><span>2 fois 10 %</span></div><div class="trick"><b>5 %</b><span>la moitié de 10 %</span></div><div class="trick"><b>1 %</b><span>je divise par 100</span></div></div>
@@ -208,7 +213,7 @@ const PT = {
   { n: 5, name: 'Boss final', d: 'Tout le programme', c: '--p5' }
  ],
  seances: [
- { id: 1, p: 1, title: "J'ai… Qui a ? Spécial %", short: 'Dominos humains', calc: 'no', mode: 'up', slides: dominoSlides(DOMT, 'Version Terminale : pourcentages et coefficients.') },
+ { id: 1, p: 1, title: "J'ai… Qui a ? Spécial %", short: 'Dominos humains', calc: 'no', mode: 'up', slides: dominoSlides(DOMT, 'Version Terminale : pourcentages et coefficients.'), cards: cardsOf(DOMT) },
  { id: 2, p: 1, title: 'Coefficients et taux', short: 'Quiz téléphone', calc: 'no', mode: 'down', slides: [
   { kind: 'html', html: `<div class="eyebrow">Les réflexes à avoir</div><h2>Coefficient multiplicateur</h2>
   <div class="tricks"><div class="trick"><b>+20 %</b><span>× 1,20</span></div><div class="trick"><b>−35 %</b><span>× 0,65</span></div><div class="trick"><b>+8 %</b><span>× 1,08</span></div><div class="trick"><b>HT → TTC</b><span>× 1,20 (TVA 20 %)</span></div><div class="trick"><b>TTC → HT</b><span>÷ 1,20</span></div><div class="trick"><b>Deux hausses</b><span>on multiplie les coefficients</span></div></div>

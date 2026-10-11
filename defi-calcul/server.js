@@ -74,6 +74,7 @@ function seriesFor(level, seance) {
   const s = getSeance(level, seance);
   const list = [];
   if (s && s.live) list.push({ id: 0, name: "Série A (d'origine)", questions: s.live, builtin: true });
+  if (s && s.cards) list.push({ id: 0, name: `Cartes résultats (${s.cards.length} cartes)`, questions: s.cards, builtin: true, kind: 'cards' });
   db.prepare('SELECT * FROM series WHERE level=? AND seance=? ORDER BY id').all(level, +seance)
     .forEach(r => list.push({ id: r.id, name: r.name, questions: JSON.parse(r.questions) }));
   return list;
@@ -192,7 +193,7 @@ app.get('/api/parcours/:level', prof, wrap((req, res) => {
   const P = PARCOURS[req.params.level];
   if (!P) throw new Error('Parcours inconnu.');
   const extra = db.prepare('SELECT seance, COUNT(*) n FROM series WHERE level=? GROUP BY seance').all(req.params.level);
-  res.json({ ...P, seances: P.seances.map(s => ({ ...s, live: undefined, liveCount: s.live ? s.live.length : 0, seriesCount: (s.live ? 1 : 0) + (extra.find(x => x.seance === s.id)?.n || 0) })) });
+  res.json({ ...P, seances: P.seances.map(s => ({ ...s, live: undefined, cards: undefined, liveKind: s.cards ? 'cards' : 'quiz', liveCount: s.live ? s.live.length : s.cards ? s.cards.length : 0, seriesCount: (s.live ? 1 : 0) + (extra.find(x => x.seance === s.id)?.n || 0) })) });
 }));
 app.get('/api/series/:level/:seance', prof, (req, res) => res.json(seriesFor(req.params.level, req.params.seance)));
 app.post('/api/series/:level/:seance', prof, wrap((req, res) => {
@@ -341,10 +342,70 @@ function newRun(classRow, seance, series) {
   const R = { id, code, classId: classRow.id, className: classRow.name, level: classRow.level, seance, title: s.title, boss: !!s.bossRule,
     seriesName: series.name, questions: series.questions, status: 'lobby', qi: -1, qEnd: 0, timer: null,
     joined: new Map(), answers: [], feelings: new Map(), clients: new Set(), created: now() };
+  if (series.kind === 'cards') Object.assign(R, { kind: 'cards', pool: series.questions, questions: [], assign: new Map(), queue: [], free: null, rounds: [], presses: new Map() });
+  else R.kind = 'quiz';
   RUNS.set(code, R);
   return R;
 }
+/* ---------- Jeu des cartes résultats (séance 1) ---------- */
+const CARD_MS = 5000;
+const shuffle = a => { for (let i = a.length - 1; i > 0; i--) { const j = crypto.randomInt(i + 1); [a[i], a[j]] = [a[j], a[i]]; } return a; };
+function giveCard(R, sid) {
+  if (R.assign.has(sid) || !R.free || !R.free.length) return;
+  const i = R.free.shift(); R.assign.set(sid, i);
+  if (R.status !== 'lobby') R.queue.push(i);
+}
+function deal(R) {
+  R.free = shuffle(R.pool.map((_, i) => i));
+  for (const sid of R.joined.keys()) giveCard(R, sid);
+  R.queue = shuffle([...R.assign.values()]);
+  R.status = 'dealt'; push(R);
+}
+function startCard(R) {
+  R.qi++; R.presses = new Map(); R.status = 'q'; R.qEnd = now() + CARD_MS;
+  clearTimeout(R.timer); R.timer = setTimeout(() => closeRound(R), CARD_MS + 400);
+  push(R);
+}
+function closeRound(R) {
+  if (R.status !== 'q') return;
+  clearTimeout(R.timer);
+  const idx = R.queue[R.qi], holderEntry = [...R.assign].find(([, i]) => i === idx), holder = holderEntry ? holderEntry[0] : null;
+  const pressers = [...R.presses.keys()];
+  let ok = false, reason = 'ok';
+  if (!pressers.length) reason = 'personne';
+  else if (pressers.length > 1) reason = pressers.includes(holder) ? 'plusieurs' : 'erreur';
+  else if (pressers[0] !== holder) reason = 'erreur';
+  else ok = true;
+  R.rounds.push({ idx, ok, reason, pressers, holder });
+  R.status = 'reveal'; push(R);
+}
+function cardsState(R, c) {
+  const pair = R.qi >= 0 && R.queue[R.qi] != null ? R.pool[R.queue[R.qi]] : null;
+  const won = R.rounds.filter(r => r.ok).length;
+  const base = { kind: 'cards', status: R.status, qi: R.qi, total: R.queue.length, title: R.title, className: R.className, seance: R.seance, serverNow: now(), qEnd: R.qEnd, won, played: R.rounds.length };
+  const last = R.status === 'reveal' ? R.rounds[R.rounds.length - 1] : null;
+  if (c.role === 'prof') {
+    const st = { ...base, code: R.code, classId: R.classId, level: R.level, seriesName: R.seriesName, joined: [...R.joined.values()], dealt: R.assign.size,
+      noCard: [...R.joined.keys()].filter(s => !R.assign.has(s)).map(s => R.joined.get(s)) };
+    if (pair && (R.status === 'q' || R.status === 'reveal')) {
+      st.formula = pair.f;
+      st.pressers = [...R.presses.keys()].map(sid => ({ label: R.joined.get(sid) || '?', r: R.assign.has(sid) ? R.pool[R.assign.get(sid)].r : '—' }));
+    }
+    if (last) Object.assign(st, { result: pair.r, round: { ok: last.ok, reason: last.reason, holder: last.holder != null ? R.joined.get(last.holder) : null } });
+    if (R.status === 'end') st.summary = summary(R);
+    return st;
+  }
+  const mine = R.assign.has(c.sid) ? R.pool[R.assign.get(c.sid)] : null;
+  const st = { ...base, me: R.joined.get(c.sid) || null, card: mine ? { r: mine.r } : null, pressed: R.presses.has(c.sid) };
+  if (last) st.round = { ok: last.ok, mine: last.holder === c.sid, pressed: last.pressers.includes(c.sid) };
+  if (R.status === 'end') st.end = { won, total: R.rounds.length, feeling: R.feelings.get(c.sid) || null };
+  return st;
+}
 function summary(R) {
+  if (R.kind === 'cards') {
+    const won = R.rounds.filter(r => r.ok).length, tot = R.rounds.length, rate = tot ? won / tot : 0;
+    return { players: R.joined.size, rate: Math.round(rate * 100), suggested: Math.round(rate * 100), perQ: R.rounds.map(r => r.ok ? 100 : 0), won, total: tot };
+  }
   const n = R.joined.size, tot = R.questions.length;
   let ok = 0; R.answers.forEach(m => m.forEach(a => { ok += a.ok ? 1 : 0; }));
   const rate = n ? ok / (n * tot) : 0;
@@ -353,6 +414,7 @@ function summary(R) {
   return { players: n, rate: Math.round(rate * 100), suggested, perQ };
 }
 function stateFor(R, client) {
+  if (R.kind === 'cards') return cardsState(R, client);
   const q = R.questions[R.qi], base = { status: R.status, qi: R.qi, total: R.questions.length, title: R.title, className: R.className, seance: R.seance, serverNow: now(), qEnd: R.qEnd };
   const m = R.answers[R.qi] || new Map();
   if (client.role === 'prof') {
@@ -417,6 +479,12 @@ app.get('/api/runs/:code/qr', prof, async (req, res) => { try {
 app.post('/api/runs/:code/action', prof, wrap((req, res) => {
   const R = getRun(req.params.code); if (!R) throw new Error('Quiz introuvable.');
   const a = req.body.action;
+  if (R.kind === 'cards') {
+    if (a === 'deal' && R.status === 'lobby') { if (!R.joined.size) throw new Error('Aucun élève connecté.'); deal(R); }
+    else if (a === 'next' && (R.status === 'dealt' || R.status === 'reveal')) { if (R.qi + 1 < R.queue.length) startCard(R); else a2end(R); }
+    else if (a === 'end') a2end(R);
+    return res.json({ ok: true });
+  }
   if (a === 'next') { if (R.status === 'lobby' || R.status === 'reveal') { if (R.qi + 1 < R.questions.length) startQuestion(R, R.qi + 1); else a2end(R); } }
   else if (a === 'reveal') doReveal(R);
   else if (a === 'end') a2end(R);
@@ -463,13 +531,13 @@ app.post('/api/join/:code/login', wrap((req, res) => {
 app.get('/api/join/:code/stream', (req, res) => {
   const R = getRun(req.params.code), s = eleve(req);
   if (!R || !s || s.class_id !== R.classId) return res.status(403).end();
-  if (!R.joined.has(s.id)) { R.joined.set(s.id, label(s)); push(R); }
+  if (!R.joined.has(s.id)) { R.joined.set(s.id, label(s)); if (R.kind === 'cards' && R.status !== 'lobby' && R.status !== 'end') giveCard(R, s.id); push(R); }
   sse(req, res, { role: 'eleve', sid: s.id }, R);
 });
 app.post('/api/join/:code/answer', wrap((req, res) => {
   const R = getRun(req.params.code), s = eleve(req);
   if (!R || !s || s.class_id !== R.classId) return res.status(403).json({ error: 'Non connecté.' });
-  if (R.status !== 'q' || +req.body.qi !== R.qi) return res.status(409).json({ error: 'Trop tard pour cette question.' });
+  if (R.kind === 'cards' || R.status !== 'q' || +req.body.qi !== R.qi) return res.status(409).json({ error: 'Trop tard pour cette question.' });
   if (now() > R.qEnd + 1500) return res.status(409).json({ error: 'Temps écoulé.' });
   const m = R.answers[R.qi];
   if (m.has(s.id)) return res.json({ ok: true });
@@ -478,6 +546,14 @@ app.post('/api/join/:code/answer', wrap((req, res) => {
   m.set(s.id, { v, ok });
   db.prepare('INSERT OR REPLACE INTO answers VALUES (?,?,?,?,?)').run(R.id, s.id, R.qi, v, ok ? 1 : 0);
   if (m.size >= R.joined.size) doReveal(R); else push(R);
+  res.json({ ok: true });
+}));
+app.post('/api/join/:code/press', wrap((req, res) => {
+  const R = getRun(req.params.code), s = eleve(req);
+  if (!R || !s || s.class_id !== R.classId || R.kind !== 'cards') return res.status(403).json({ error: 'Non connecté.' });
+  if (!R.assign.has(s.id)) return res.status(409).json({ error: 'Tu n\'as pas de carte pour cette partie.' });
+  if (R.status !== 'q' || +req.body.qi !== R.qi || now() > R.qEnd + 300) return res.status(409).json({ error: 'Trop tard !' });
+  if (!R.presses.has(s.id)) { R.presses.set(s.id, now()); push(R); }
   res.json({ ok: true });
 }));
 app.post('/api/join/:code/feeling', wrap((req, res) => {
@@ -508,7 +584,7 @@ app.post('/api/eleve/logout', (req, res) => {
 
 /* ---------------- Pages ---------------- */
 const pub = path.join(__dirname, 'public');
-app.use(express.static(pub, { index: false, maxAge: '1h' }));
+app.use(express.static(pub, { index: false, maxAge: 0 }));
 app.get(['/j/:code', '/eleve'], (req, res) => res.sendFile(path.join(pub, 'eleve.html')));
 app.get('/confidentialite', (req, res) => res.sendFile(path.join(pub, 'confidentialite.html')));
 app.get('/', (req, res) => res.sendFile(path.join(pub, 'prof.html')));
