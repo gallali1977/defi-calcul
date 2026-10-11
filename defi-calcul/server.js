@@ -238,6 +238,11 @@ app.put('/api/classes/:id/points/:seance', prof, wrap((req, res) => {
   db.prepare('INSERT INTO points VALUES (?,?,?) ON CONFLICT(class_id, seance) DO UPDATE SET pts=excluded.pts').run(+req.params.id, +req.params.seance, v);
   res.json({ ok: true });
 }));
+app.delete('/api/classes/:id/points', prof, (req, res) => {
+  db.prepare('DELETE FROM points WHERE class_id=?').run(+req.params.id);
+  db.prepare('UPDATE classes SET record_s=NULL WHERE id=?').run(+req.params.id);
+  res.json({ ok: true });
+});
 app.delete('/api/classes/:id/points/:seance', prof, (req, res) => { db.prepare('DELETE FROM points WHERE class_id=? AND seance=?').run(+req.params.id, +req.params.seance); res.json({ ok: true }); });
 app.put('/api/classes/:id/record', prof, wrap((req, res) => {
   const c = db.prepare('SELECT * FROM classes WHERE id=?').get(+req.params.id), s = Math.round(+req.body.seconds);
