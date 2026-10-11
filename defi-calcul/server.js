@@ -124,7 +124,7 @@ app.use(express.json({ limit: '300kb' }));
 app.use(cookieParser());
 // Les requêtes qui modifient des données doivent être en JSON (protection CSRF simple)
 app.use('/api', (req, res, next) => {
-  if (req.method !== 'GET' && !req.is('application/json')) return res.status(415).json({ error: 'Format de requête invalide.' });
+  if (req.method !== 'GET' && req.method !== 'DELETE' && !req.is('application/json')) return res.status(415).json({ error: 'Format de requête invalide.' });
   next();
 });
 
