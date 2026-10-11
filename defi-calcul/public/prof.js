@@ -95,7 +95,12 @@ async function classView(id, tab) {
      <label class="field">Nom de la classe<input id="cn" value="${esc(c.name)}"></label>
      <div class="row"><label class="field">Goûter à (points)<input id="cg" type="number" min="0" max="1000" step="10" value="${c.goal_g}"></label><label class="field">Bonus sur la note à (points)<input id="cb" type="number" min="0" max="1000" step="10" value="${c.goal_b}"></label></div>
      <div class="row"><button class="btn">Enregistrer</button><span class="msg" id="cm"></span></div>
-     <p class="small">Record des dominos : ${c.record_s ? mmss(c.record_s) : 'aucun'}. Pour corriger des points, ouvrez la séance concernée puis sa dernière diapo.</p></form>`;
+     <p class="small">Record des dominos : ${c.record_s ? mmss(c.record_s) : 'aucun'}. Pour corriger les points d'une seule séance, ouvrez-la puis allez à sa dernière diapo.</p></form>
+     <div class="panel" style="max-width:560px;margin-top:16px"><h3>Remettre la jauge à zéro</h3><p class="small">Efface les points de toutes les séances et le record des dominos de ${esc(c.name)}. Les élèves, leurs codes et leurs résultats aux quiz sont conservés.</p>
+     <div class="row"><button class="btn warn" id="rz">Remettre la jauge à zéro</button><span class="msg" id="rzm"></span></div></div>`;
+    let rzArmed = false;
+    $('#rz').onclick = async () => { if (!rzArmed) { rzArmed = true; $('#rz').textContent = `Confirmer : jauge de ${c.name} à zéro`; return; }
+      try { await api(`/api/classes/${id}/points`, { method: 'DELETE' }); flash($('#rzm'), 'Jauge remise à zéro.'); $('#rz').textContent = 'Remettre la jauge à zéro'; rzArmed = false; } catch (err) { flash($('#rzm'), err.message, false); } };
     $('#cf').onsubmit = async e => { e.preventDefault(); try { await api('/api/classes/' + id, { method: 'PUT', body: { name: $('#cn').value, goal_g: +$('#cg').value, goal_b: +$('#cb').value } }); flash($('#cm'), 'Enregistré.'); } catch (err) { flash($('#cm'), err.message, false); } };
   }
 }
@@ -242,7 +247,10 @@ function pointsSlide(stg, sl, c, S, game) {
   ${sl.record ? `<p style="margin-top:1em">Temps du chrono : <b class="num" id="recNow">${mmss(T.t)}</b> · Record de la classe : <b class="num" id="recBest">${c.record_s == null ? 'aucun' : mmss(c.record_s)}</b></p><button class="btn ghost" id="recBtn">Enregistrer ce temps</button> <span id="recMsg"></span>` : ''}</div>
   <div class="pts-in"><label for="ptsIn" class="eyebrow" style="color:inherit;opacity:.75">Points gagnés (0 à 100)</label>
   <div class="row" style="margin-top:8px"><input id="ptsIn" type="number" min="0" max="100" value="${sug}"><button class="btn gold" id="ptsBtn">Ajouter à la jauge</button></div>
-  <div class="saved" id="ptsMsg">${prev != null ? `Déjà enregistré : ${prev} pts. Un nouvel envoi remplace ce score.` : ''}</div></div></div>`;
+  <div class="saved" id="ptsMsg">${prev != null ? `Déjà enregistré : ${prev} pts. Un nouvel envoi remplace ce score.` : ''}</div>
+  ${prev != null ? '<button class="btn ghost sm" id="ptsDel" style="color:var(--paper);border-color:rgba(255,255,255,.35);margin-top:6px">Effacer le score de cette séance</button>' : ''}</div></div>`;
+  const pd = $('#ptsDel'); if (pd) { let a = false; pd.onclick = async () => { if (!a) { a = true; pd.textContent = 'Confirmer : effacer'; return; }
+    try { await api(`/api/classes/${c.id}/points/${S.id}`, { method: 'DELETE' }); delete c.points[S.id]; $('#ptsIn').value = ''; pd.remove(); $('#ptsMsg').textContent = 'Score effacé : cette séance ne compte plus dans la jauge.'; } catch (e) { $('#ptsMsg').textContent = e.message; } }; }
   $('#ptsBtn').onclick = async () => { const v = Math.round(+$('#ptsIn').value); if (isNaN(v) || v < 0 || v > 100) { $('#ptsMsg').textContent = 'Entrez un nombre entre 0 et 100.'; return; }
     try { await api(`/api/classes/${c.id}/points/${S.id}`, { method: 'PUT', body: { pts: v } }); c.points[S.id] = v; const tot = Object.values(c.points).reduce((a, b) => a + b, 0); $('#ptsMsg').textContent = `${v} points ajoutés. La jauge de ${c.name} est à ${tot} / 1 000.`; } catch (e) { $('#ptsMsg').textContent = e.message; } };
   if (sl.record) $('#recBtn').onclick = async () => { if (T.t <= 0) { $('#recMsg').textContent = 'Lancez d\'abord le chrono.'; return; }
