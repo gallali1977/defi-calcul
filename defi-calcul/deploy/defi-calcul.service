@@ -1,0 +1,22 @@
+[Unit]
+Description=Défi Calcul (rituel de calcul STMG)
+After=network.target
+
+[Service]
+Type=simple
+User=www-data
+Group=www-data
+WorkingDirectory=/var/www/defi-calcul
+Environment=NODE_ENV=production
+Environment=PORT=3100
+Environment=DATA_DIR=/var/lib/defi-calcul
+Environment=PUBLIC_URL=https://calcul.grandoralstmg.cloud
+ExecStart=/usr/bin/node server.js
+Restart=always
+RestartSec=3
+NoNewPrivileges=true
+ProtectSystem=full
+ReadWritePaths=/var/lib/defi-calcul
+
+[Install]
+WantedBy=multi-user.target

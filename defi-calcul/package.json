@@ -1,0 +1,19 @@
+{
+  "name": "defi-calcul",
+  "version": "1.0.0",
+  "description": "Défi Calcul : rituel de calcul chronométré pour les classes de STMG",
+  "main": "server.js",
+  "private": true,
+  "scripts": {
+    "start": "node server.js",
+    "admin": "node scripts/create-admin.js"
+  },
+  "engines": { "node": ">=18" },
+  "dependencies": {
+    "bcryptjs": "^2.4.3",
+    "better-sqlite3": "^11.3.0",
+    "cookie-parser": "^1.4.6",
+    "express": "^4.21.0",
+    "qrcode": "^1.5.4"
+  }
+}
