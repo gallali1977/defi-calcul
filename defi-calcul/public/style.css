@@ -287,3 +287,16 @@ table.edit td{text-align:left;white-space:normal;vertical-align:top}
 body.tni .appbar{display:none}
 #print{display:none}
 @media print{ body>*:not(#print){display:none!important} #print{display:block!important} }
+/* jeu des cartes résultats */
+.cardf{font-family:var(--f-display);font-stretch:125%;font-weight:900;font-size:clamp(3.5rem,11vw,9rem);line-height:1;text-align:center;margin:20px 0 26px}
+.pressers{display:flex;flex-wrap:wrap;gap:12px;justify-content:center;min-height:3.2em}
+.pressers span{background:var(--tile);border:2px solid var(--line);border-radius:999px;padding:10px 20px;font-size:1.4em;animation:pop .25s}
+.pressers span.ok{background:var(--go);border-color:var(--go);color:#fff}
+.pressers span.ko{background:var(--stop);border-color:var(--stop);color:#fff}
+.verdict{margin:22px auto 0;max-width:46ch;text-align:center;font-family:var(--f-display);font-weight:850;font-size:clamp(1.3rem,2.6vw,2.1rem);line-height:1.2}
+.verdict.ok{color:var(--go)} .verdict.ko{color:var(--stop)}
+.mycard{border-radius:24px;background:var(--card);border:3px solid var(--ink);text-align:center;padding:26px 16px}
+.mycard .r{font-family:var(--f-display);font-stretch:125%;font-weight:900;font-size:5.2em;line-height:1}
+.itsme{width:100%;border:0;border-radius:20px;padding:26px 0;font-family:var(--f-display);font-weight:900;font-size:1.9em;background:var(--signal);color:#fff;box-shadow:0 6px 0 color-mix(in srgb,var(--signal) 60%,#000)}
+.itsme:active{transform:translateY(4px);box-shadow:0 2px 0 color-mix(in srgb,var(--signal) 60%,#000)}
+.itsme:disabled{background:var(--tile);color:var(--muted);box-shadow:none}

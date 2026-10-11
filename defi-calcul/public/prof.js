@@ -279,17 +279,42 @@ async function liveView(code) {
   cleanup = () => { es.close(); clearInterval(clockT); };
   const act = (action, extra = {}) => api(`/api/runs/${code}/action`, { body: { action, ...extra } }).catch(e => alert(e.message));
   function tickClock() { const el = $('#bc'); if (!el || !st) return; const left = Math.max(0, (st.qEnd - (Date.now() + offset)) / 1000); el.textContent = Math.ceil(left); el.classList.toggle('warn', left <= 5); }
+  function drawCards(S, L) {
+    if (S.status === 'dealt') {
+      L.innerHTML = `<div class="eyebrow">Cartes distribuées</div><h2>${S.dealt} carte${S.dealt > 1 ? 's' : ''} distribuée${S.dealt > 1 ? 's' : ''}</h2>
+       <p class="lead">Chaque élève voit son résultat sur son téléphone. Une formule va s'afficher : celui qui a le résultat appuie sur « C'est moi ! » en moins de 5 secondes. Un seul élève doit appuyer.</p>
+       ${S.noCard.length ? `<div class="note">Sans carte (toutes les cartes sont distribuées) : ${S.noCard.map(esc).join(', ')}</div>` : ''}
+       <div class="row" style="margin-top:22px"><button class="btn go" id="nx">Afficher la première carte</button><button class="btn ghost" id="end">Terminer</button></div>`;
+    } else {
+      const rev = S.status === 'reveal', rd = S.round || {};
+      const why = !rev ? '' : rd.ok ? 'Un seul élève, le bon : la classe gagne la carte !'
+        : rd.reason === 'personne' ? `Personne n'a appuyé. Le résultat était chez ${esc(rd.holder || '?')}.`
+        : rd.reason === 'plusieurs' ? 'Plusieurs élèves ont appuyé : carte perdue.'
+        : `Ce n'était pas le bon élève. Le résultat était chez ${esc(rd.holder || '?')}.`;
+      L.innerHTML = `<div class="livebar"><div class="eyebrow">Carte ${S.qi + 1} / ${S.total}</div>${rev ? '' : '<div class="bigclock num" id="bc"></div>'}<div class="answered num">${S.won} gagnée${S.won > 1 ? 's' : ''} sur ${S.played}</div></div>
+       <div class="cardf num">${esc(S.formula)}${rev ? ` <span class="up">= ${esc(S.result)}</span>` : ''}</div>
+       <div class="pressers">${(S.pressers || []).map(p => `<span class="${rev ? (rd.ok ? 'ok' : 'ko') : ''}"><b>${esc(p.label)}</b> · ${esc(p.r)}</span>`).join('') || (rev ? '' : '<span class="small">En attente de « C\'est moi ! »…</span>')}</div>
+       ${rev ? `<div class="verdict ${rd.ok ? 'ok' : 'ko'}">${why}</div>` : ''}
+       <div class="row" style="margin-top:22px">${rev ? `<button class="btn go" id="nx">${S.qi + 1 < S.total ? 'Carte suivante' : 'Voir le bilan'}</button>` : ''}<button class="btn ghost" id="end">Terminer la partie</button></div>`;
+      if (!rev) { tickClock(); clockT = setInterval(tickClock, 200); }
+      if (rev && lastStatus !== 'reveal') beep(rd.ok ? [523, 659, 784] : [330, 262], .14);
+    }
+    const nx = $('#nx'); if (nx) nx.onclick = () => act('next');
+    let armed = false; $('#end').onclick = () => { if (!armed) { armed = true; $('#end').textContent = 'Confirmer : terminer'; return; } act('end'); };
+  }
   function draw() {
     const S = st, L = $('#ls');
-    $('#lt').textContent = `${S.title}`; $('#leb').textContent = `Quiz téléphone · ${S.className} · ${S.seriesName}`;
+    $('#lt').textContent = `${S.title}`; $('#leb').textContent = `${S.kind === 'cards' ? 'Version téléphone' : 'Quiz téléphone'} · ${S.className} · ${S.seriesName}`;
     $('#lback').href = `#/c/${S.classId}/s/${S.seance}`;
     clearInterval(clockT);
     if (S.status === 'lobby') {
       L.innerHTML = `<div class="lobby"><div class="qr">${qr.svg}</div><div><div class="eyebrow">Scannez le QR code, ou allez sur</div><p style="font-size:1.4em;font-weight:700;margin:.2em 0;word-break:break-all">${esc(qr.url.replace(/^https?:\/\//, '').replace(/\/j\/.*/, '/j/'))}<span class="joincode">${esc(S.code)}</span></p>
        <p class="lead">Choisis ton nom, tape ton code à 4 chiffres, et attends le départ.</p>
        <div class="answered num">${S.joined.length} élève${S.joined.length > 1 ? 's' : ''} connecté${S.joined.length > 1 ? 's' : ''}</div><div class="chips">${S.joined.map(n => `<span>${esc(n)}</span>`).join('')}</div>
-       <div class="row" style="margin-top:22px"><button class="btn go" id="go" ${S.joined.length ? '' : 'disabled'}>Lancer la première question</button><button class="btn ghost" id="end">Annuler</button></div><p class="small" id="conn"></p></div></div>`;
-      $('#go').onclick = () => act('next'); $('#end').onclick = () => act('end');
+       <div class="row" style="margin-top:22px"><button class="btn go" id="go" ${S.joined.length ? '' : 'disabled'}>${S.kind === 'cards' ? 'Distribuer les cartes' : 'Lancer la première question'}</button><button class="btn ghost" id="end">Annuler</button></div><p class="small" id="conn"></p></div></div>`;
+      $('#go').onclick = () => act(S.kind === 'cards' ? 'deal' : 'next'); $('#end').onclick = () => act('end');
+    } else if (S.kind === 'cards' && S.status !== 'end') {
+      drawCards(S, L);
     } else if (S.status === 'q' || S.status === 'reveal') {
       const q = S.question, rev = S.status === 'reveal' && S.stats;
       L.innerHTML = `<div class="livebar"><div class="eyebrow">Question ${S.qi + 1} / ${S.total}</div>${S.status === 'q' ? `<div class="bigclock num" id="bc"></div>` : ''}<div class="answered num">${S.answered} / ${S.joined.length} réponses</div></div>
@@ -302,8 +327,8 @@ async function liveView(code) {
       if (S.status === 'reveal' && lastStatus !== 'reveal') beep([660, 880], .15);
     } else if (S.status === 'end') {
       const sm = S.summary;
-      L.innerHTML = `<div class="eyebrow">Bilan · ${sm.players} élève${sm.players > 1 ? 's' : ''}</div><h2>${sm.rate} % de bonnes réponses</h2>
-       <div class="pctq">${sm.perQ.map((p, i) => `<div style="height:${Math.max(3, p)}%" title="Question ${i + 1} : ${p} %"><span>Q${i + 1}</span></div>`).join('')}</div>
+      L.innerHTML = `<div class="eyebrow">Bilan · ${sm.players} élève${sm.players > 1 ? 's' : ''}</div><h2>${S.kind === 'cards' ? `${sm.won} carte${sm.won > 1 ? 's' : ''} gagnée${sm.won > 1 ? 's' : ''} sur ${sm.total}` : `${sm.rate} % de bonnes réponses`}</h2>
+       <div class="pctq">${sm.perQ.map((p, i) => `<div style="height:${Math.max(3, p)}%" title="${S.kind === 'cards' ? 'Carte' : 'Question'} ${i + 1} : ${p} %"><span>${S.kind === 'cards' ? 'C' : 'Q'}${i + 1}</span></div>`).join('')}</div>
        <div class="pts-in" style="margin-top:42px;max-width:560px"><label for="ptsIn" class="eyebrow" style="color:inherit;opacity:.75">Points proposés pour la jauge</label>
        <div class="row" style="margin-top:8px"><input id="ptsIn" type="number" min="0" max="100" value="${sm.suggested}"><button class="btn gold" id="ptsBtn">Ajouter à la jauge</button></div><div class="saved" id="ptsMsg"></div></div>
        <p class="small">Les élèves indiquent maintenant sur leur téléphone s'ils se sentent capables (de 1 à 5).</p>
@@ -316,7 +341,7 @@ async function liveView(code) {
 
 /* ================= Exercices : séries de questions ================= */
 async function seriesView(lvl = '1', sid) {
-  const P = await parcours(lvl), withLive = P.seances.filter(s => s.liveCount);
+  const P = await parcours(lvl), withLive = P.seances.filter(s => s.liveCount && s.liveKind !== 'cards');
   sid = +(sid || withLive[0].id);
   const list = await api(`/api/series/${lvl}/${sid}`);
   setView(`<div class="wrap"><div class="eyebrow">Exercices</div><h1 class="disp" style="font-size:clamp(2rem,4vw,3.2rem)">Séries de questions</h1>

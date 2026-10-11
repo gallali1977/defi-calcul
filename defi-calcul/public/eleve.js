@@ -63,7 +63,43 @@ function play(info) {
   $('#hd').textContent = `${info.me.label} · ${info.className}`;
   let st = null, offset = 0, clockT = null, sending = false, sign = '', lastKey = '', draft = '';
   const es = new EventSource(`/api/join/${CODE}/stream`);
-  es.onmessage = ev => { st = JSON.parse(ev.data); offset = st.serverNow - Date.now(); draw(); };
+  es.onmessage = ev => { st = JSON.parse(ev.data); offset = st.serverNow - Date.now(); if (st.kind === 'cards') drawCards(); else draw(); };
+  let buzzed = -1;
+  function drawCards() {
+    clearInterval(clockT);
+    const c = st.card;
+    if (st.status === 'lobby') { M.innerHTML = `<div class="wait"><div class="eyebrow">${esc(st.title)}</div><h1 class="disp" style="font-size:1.8em;margin:.4em 0">C'est bon, tu es connecté·e !</h1><p>Le professeur va distribuer les cartes.</p><div class="dotz">•••</div></div>`; return; }
+    if (st.status === 'end') {
+      const e = st.end || {}; es.close();
+      M.innerHTML = `<div class="eyebrow">${esc(st.title)} · terminé</div><h1 class="disp" style="font-size:2.2em">${e.won} / ${e.total}</h1><p class="lead">Cartes gagnées par la classe. ${e.total && e.won / e.total >= .7 ? 'Belle équipe !' : 'On fera encore mieux la prochaine fois !'}</p>
+       <div class="panel"><b>Après ce défi, je me sens capable…</b><p class="small" style="margin:.2em 0 .6em">1 = pas du tout · 5 = tout à fait</p><div class="feel">${[1, 2, 3, 4, 5].map(n => `<button data-f="${n}" class="${e.feeling === n ? 'on' : ''}">${n}</button>`).join('')}</div><div class="msg ok" id="fm">${e.feeling ? 'Merci !' : ''}</div></div>
+       <a class="btn" href="/eleve" style="justify-content:center">Voir mon carnet</a>`;
+      M.querySelectorAll('[data-f]').forEach(b => b.onclick = async () => { await api(`/api/join/${CODE}/feeling`, { score: +b.dataset.f }).catch(() => api('/api/eleve/feeling', { score: +b.dataset.f, seance: st.seance }).catch(() => {})); M.querySelectorAll('[data-f]').forEach(x => x.classList.toggle('on', x === b)); $('#fm').textContent = 'Merci !'; });
+      return;
+    }
+    if (!c) { M.innerHTML = `<div class="wait"><h2 class="disp" style="font-size:1.6em">Pas de carte pour toi cette fois</h2><p>Toutes les cartes sont distribuées. Calcule quand même chaque formule de tête : c'est un bon entraînement !</p></div>`; return; }
+    const q = st.status === 'q', rev = st.status === 'reveal', rd = st.round || {};
+    let msg = '';
+    if (rev) msg = rd.mine
+      ? (rd.ok ? `<div class="result ok"><span class="big">Bravo !</span>C'était bien toi : la classe gagne la carte.</div>`
+        : rd.pressed ? `<div class="result ko"><span class="big">C'était toi !</span>Mais un autre élève a aussi appuyé.</div>`
+        : `<div class="result ko"><span class="big">C'était toi !</span>Reste bien attentif pour la suite.</div>`)
+      : rd.pressed ? `<div class="result ko"><span class="big">Pas ta carte</span>Ce résultat n'était pas le tien.</div>`
+      : `<div class="result ${rd.ok ? 'ok' : 'ko'}"><span class="big">${rd.ok ? 'Carte gagnée' : 'Carte perdue'}</span>Regarde le tableau.</div>`;
+    M.innerHTML = `<div class="row" style="justify-content:space-between"><div class="eyebrow">${st.status === 'dealt' ? 'Ta carte' : `Carte ${st.qi + 1} / ${st.total}`}</div>${q ? '<div class="pclock num" id="pc"></div>' : ''}</div>
+      <div class="mycard"><div class="eyebrow">Mon résultat</div><div class="r num">${esc(c.r)}</div></div>
+      ${st.status === 'dealt' ? '<p class="lead" style="text-align:center">Retiens ton résultat et regarde le tableau.</p>' : ''}
+      ${q ? `<button class="itsme" id="me" ${st.pressed ? 'disabled' : ''}>${st.pressed ? 'Envoyé !' : 'C\'est moi !'}</button>` : ''}
+      ${msg}<div class="msg err" id="am"></div>
+      <p class="small" style="text-align:center">La classe a gagné ${st.won} carte${st.won > 1 ? 's' : ''} sur ${st.played}.</p>`;
+    if (q) {
+      const b = $('#me');
+      if (b && !st.pressed) b.onclick = async () => { b.disabled = true; b.textContent = 'Envoyé !'; if (navigator.vibrate) navigator.vibrate(40); try { await api(`/api/join/${CODE}/press`, { qi: st.qi }); } catch (e) { $('#am').textContent = e.message; } };
+      const tk = () => { const el = $('#pc'); if (!el) return; const left = Math.max(0, (st.qEnd - (Date.now() + offset)) / 1000); el.textContent = Math.ceil(left); el.classList.toggle('warn', left <= 2); if (left <= 0 && b) b.disabled = true; };
+      tk(); clockT = setInterval(tk, 200);
+    }
+    if (rev && buzzed !== st.qi) { buzzed = st.qi; if (navigator.vibrate) navigator.vibrate(rd.ok ? 60 : [80, 60, 80]); }
+  }
   es.onerror = () => { if (es.readyState === 2) M.innerHTML = '<p class="lead">Connexion perdue. Recharge la page.</p>'; };
   const tick = () => { const el = $('#pc'); if (!el || !st) return; const tot = (st.question && st.qEnd) ? st.qEnd - (Date.now() + offset) : 0; const left = Math.max(0, tot / 1000); el.textContent = Math.ceil(left); el.classList.toggle('warn', left <= 5); const b = $('#pb'); if (b) b.style.width = Math.min(100, left / (st._dur || 30) * 100) + '%'; };
   async function answer(v) {
